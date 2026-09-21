@@ -425,6 +425,13 @@
       onlyChecks("signalFilter", "sig", state.signals,
         ["tax_foreclosure_notice"]);
       state.qualFilter = "TAX_FORECLOSURE_LEAD";
+    } else if (id === "all") {
+      state.yearsRange = { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true };
+      syncYearsCheckboxes();
+      state.includeLowPriority = true;
+      if ($("togLowPri")) $("togLowPri").checked = true;
+      state.sort = "recent";
+      $("sortMode").value = "recent";
     }
     if (id !== "taxsale" && id !== "taxfcl") state.qualFilter = null;
     markPresetActive(id);
