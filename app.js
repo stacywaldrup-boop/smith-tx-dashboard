@@ -68,7 +68,7 @@
   };
   var PAGE = 60;
   var marked = loadMarked();   // Set of lead_id (localStorage)
-  var skipped = {};            // session-only hide
+  var skipped = loadSkipped(); // Set of lead_id (localStorage)
   var filtered = [];
   var io = null;
   var sentinel = null;   // persistent JS node — never lives in index.html
@@ -85,6 +85,20 @@
     try {
       localStorage.setItem("elp_marked_v5",
         JSON.stringify(Object.keys(marked)));
+    } catch (e) { /* storage unavailable — non-fatal */ }
+  }
+  function loadSkipped() {
+    try {
+      var raw = localStorage.getItem("smith_hidden_v1");
+      var arr = raw ? JSON.parse(raw) : [];
+      var s = {}; arr.forEach(function (x) { s[x] = true; });
+      return s;
+    } catch (e) { return {}; }
+  }
+  function saveSkipped() {
+    try {
+      localStorage.setItem("smith_hidden_v1",
+        JSON.stringify(Object.keys(skipped)));
     } catch (e) { /* storage unavailable — non-fatal */ }
   }
 
@@ -346,6 +360,9 @@
       state.sort = e.target.value; render();
     });
     $("resetBtn").addEventListener("click", function () { applyPreset("all"); });
+    $("restoreHidden").addEventListener("click", function () {
+      skipped = {}; saveSkipped(); render();
+    });
     $("exportFiltered").addEventListener("click", function () {
       exportCsv(filtered, "smith_county_leads_filtered.csv");
     });
@@ -543,6 +560,7 @@
         " low-priority hidden — toggle in sidebar)";
     $("rowCount").textContent = rcLine;
     $("markedCount").textContent = Object.keys(marked).length;
+    $("hiddenCount").textContent = Object.keys(skipped).length;
     updateFilterSummary();
 
     var empty = $("emptyMsg");
@@ -779,7 +797,7 @@
       $("markedCount").textContent = Object.keys(marked).length;
     };
     d.querySelector(".act-skip").onclick = function () {
-      skipped[r.lead_id] = true; render();
+      skipped[r.lead_id] = true; saveSkipped(); render();
     };
     d.querySelector(".act-export").onclick = function () {
       exportCsv([r], "smith_county_lead_" + (r.lead_id || "row") + ".csv");
