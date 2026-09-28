@@ -120,6 +120,7 @@
     r._days = daysFromToday(sd);
     r._assessed = Number(r.assessed_value) || 0;
     r._review = r.parcel_resolution_status === "REVIEW_REQUIRED";
+    r._reviewQueue = r.qualification_class === "REVIEW_REQUIRED";
     r._filed = parseDate(r.latest_event_date);
     // years_back bucket (0/1/2/3/4/5 — 5 catches 5-or-more)
     var yb = Number(r.tax_delinquent_years_back) || 0;
@@ -185,13 +186,17 @@
   }
 
   function topStatsHtml(p) {
-    // Default-view universe = everything EXCEPT TAX_DEFAULT_LOW_PRIORITY.
-    // That bucket is operator noise (1yr + <$100) — surfaced only when the
-    // "Show low-priority" toggle flips on.
+    // Default-view universe excludes low-priority and Review Needed records.
+    // Review Needed is a separate queue selected from the sidebar.
     var defaultViewCount = records.filter(function (r) {
-      return r._qualClass !== "TAX_DEFAULT_LOW_PRIORITY";
+      return r._qualClass !== "TAX_DEFAULT_LOW_PRIORITY" && !r._reviewQueue;
     }).length;
-    var lpCount  = records.length - defaultViewCount;
+    var lpCount = records.filter(function (r) {
+      return r._qualClass === "TAX_DEFAULT_LOW_PRIORITY";
+    }).length;
+    var reviewCount = records.filter(function (r) {
+      return r._reviewQueue;
+    }).length;
     var nNew    = records.filter(function (r) { return r._isNew; }).length;
     var nL30    = records.filter(function (r) { return r._isL30; }).length;
     var nStack  = records.filter(function (r) { return r._stacked; }).length;
@@ -204,13 +209,14 @@
         n.toLocaleString() + '</div><div class="l">' + l + "</div></div>";
     }
     var lpStat = lpCount ? st(lpCount, "low-priority (hidden)") : "";
+    var reviewStat = reviewCount ? st(reviewCount, "Review Needed") : "";
     return st(defaultViewCount, "leads") +
       st(nNew,    "NEW today",         "urgent") +
       st(nL30,    "last 30 days") +
       st(nStack,  "stacked",           "estate") +
       st(nEstate, "estate-titled",     "estate") +
       st(nHot,    "tax delinq 3+yr",   "urgent") +
-      lpStat;
+      reviewStat + lpStat;
   }
   function populateYearsCounts() {
     var c = {0:0,1:0,2:0,3:0,4:0,5:0};
@@ -465,7 +471,8 @@
 
     return records.filter(function (r) {
       if (skipped[r.lead_id]) return false;
-      if (state.review && !r._review) return false;
+      if (!window.SmithFilterPolicy.includeByReviewMode(
+          r._reviewQueue, state.review)) return false;
       if (state.stackedOnly && !r._stacked) return false;
       if (state.estateOnly && !r._estate) return false;
       if (state.newOnly && !r._isNew) return false;
@@ -558,13 +565,23 @@
     var lpHidden = records.filter(function (r) {
       return r._qualClass === "TAX_DEFAULT_LOW_PRIORITY";
     }).length;
-    var universeN = state.includeLowPriority
-      ? records.length : records.length - lpHidden;
+    var reviewHidden = records.filter(function (r) {
+      return r._reviewQueue;
+    }).length;
+    var universeN = records.filter(function (r) {
+      return window.SmithFilterPolicy.includeByReviewMode(
+        r._reviewQueue, state.review) &&
+        (state.includeLowPriority ||
+          r._qualClass !== "TAX_DEFAULT_LOW_PRIORITY");
+    }).length;
     var rcLine = filtered.length.toLocaleString() +
       " of " + universeN.toLocaleString() + " leads";
     if (!state.includeLowPriority && lpHidden)
       rcLine += "  (" + lpHidden.toLocaleString() +
         " low-priority hidden — toggle in sidebar)";
+    if (!state.review && reviewHidden)
+      rcLine += "  (" + reviewHidden.toLocaleString() +
+        " in Review Needed)";
     $("rowCount").textContent = rcLine;
     $("markedCount").textContent = Object.keys(marked).length;
     $("hiddenCount").textContent = Object.keys(skipped).length;
