@@ -6,8 +6,10 @@
 }(typeof window !== "undefined" ? window : globalThis, function () {
   "use strict";
 
-  function includeByReviewMode(recordIsReview, reviewOnly) {
-    return reviewOnly ? !!recordIsReview : !recordIsReview;
+  function includeByReviewMode(recordIsReview, queueScope) {
+    if (queueScope === "all") return true;
+    if (queueScope === "review") return !!recordIsReview;
+    return !recordIsReview;
   }
 
   return { includeByReviewMode: includeByReviewMode };

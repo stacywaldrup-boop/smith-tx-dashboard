@@ -51,7 +51,8 @@
   // 1-year-late is not strong distress).
   var state = {
     search: "", saleWindow: "any", valMin: null, valMax: null,
-    signals: {}, owners: {}, absentee: false, oos: false, review: false,
+    signals: {}, owners: {}, absentee: false, oos: false,
+    queueScope: "main",
     multiOnly: false, stackedOnly: false, estateOnly: false,
     newOnly: false, last30Only: false,
     yearsRange: { 0: true, 1: false, 2: false, 3: true, 4: true, 5: true },
@@ -231,7 +232,7 @@
   // ---------- sidebar ----------
   var PRESETS = [
     { id: "new",     label: "NEW today" },
-    { id: "last30",  label: "Last 30 days" },
+    { id: "last30",  label: "Fresh leads — last 30 days" },
     { id: "fcl21",   label: "Foreclosures — next 21 days" },
     { id: "taxsale", label: "Tax sale leads (active sale date)" },
     { id: "taxfcl",  label: "Tax foreclosure leads" },
@@ -327,7 +328,8 @@
       state.oos = e.target.checked; markPresetActive(""); render();
     });
     $("togReview").addEventListener("change", function (e) {
-      state.review = e.target.checked; markPresetActive(""); render();
+      state.queueScope = e.target.checked ? "review" : "main";
+      markPresetActive(""); render();
     });
     // New filter wires — added for daily-refresh feature set.
     var togStacked = $("togStacked");
@@ -340,11 +342,17 @@
     });
     var togNew = $("togNew");
     if (togNew) togNew.addEventListener("change", function (e) {
-      state.newOnly = e.target.checked; markPresetActive(""); render();
+      state.newOnly = e.target.checked;
+      state.queueScope = (state.newOnly || state.last30Only) ? "all" : "main";
+      $("togReview").checked = false;
+      markPresetActive(""); render();
     });
     var togL30 = $("togL30");
     if (togL30) togL30.addEventListener("change", function (e) {
-      state.last30Only = e.target.checked; markPresetActive(""); render();
+      state.last30Only = e.target.checked;
+      state.queueScope = (state.newOnly || state.last30Only) ? "all" : "main";
+      $("togReview").checked = false;
+      markPresetActive(""); render();
     });
     var togLp = $("togLowPri");
     if (togLp) togLp.addEventListener("change", function (e) {
@@ -387,7 +395,7 @@
     $("valMin").value = ""; $("valMax").value = "";
     state.absentee = false; $("togAbsentee").checked = false;
     state.oos = false; $("togOos").checked = false;
-    state.review = false; $("togReview").checked = false;
+    state.queueScope = "main"; $("togReview").checked = false;
     state.multiOnly = false;
     state.stackedOnly = false; if ($("togStacked")) $("togStacked").checked = false;
     state.estateOnly  = false; if ($("togEstate"))  $("togEstate").checked  = false;
@@ -415,8 +423,10 @@
       state.stackedOnly = true; if ($("togStacked")) $("togStacked").checked = true;
     } else if (id === "new") {
       state.newOnly = true; if ($("togNew")) $("togNew").checked = true;
+      openFreshQueue();
     } else if (id === "last30") {
       state.last30Only = true; if ($("togL30")) $("togL30").checked = true;
+      openFreshQueue();
     } else if (id === "tax5") {
       state.yearsRange = { 0: false, 1: false, 2: false, 3: false, 4: false, 5: true };
       syncYearsCheckboxes();
@@ -442,6 +452,15 @@
     if (id !== "taxsale" && id !== "taxfcl") state.qualFilter = null;
     markPresetActive(id);
     render();
+  }
+  function openFreshQueue() {
+    state.queueScope = "all";
+    state.yearsRange = { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true };
+    syncYearsCheckboxes();
+    state.includeLowPriority = true;
+    if ($("togLowPri")) $("togLowPri").checked = true;
+    state.sort = "recent";
+    $("sortMode").value = "recent";
   }
   function syncYearsCheckboxes() {
     var yf = $("yearsFilter"); if (!yf) return;
@@ -472,7 +491,7 @@
     return records.filter(function (r) {
       if (skipped[r.lead_id]) return false;
       if (!window.SmithFilterPolicy.includeByReviewMode(
-          r._reviewQueue, state.review)) return false;
+          r._reviewQueue, state.queueScope)) return false;
       if (state.stackedOnly && !r._stacked) return false;
       if (state.estateOnly && !r._estate) return false;
       if (state.newOnly && !r._isNew) return false;
@@ -570,7 +589,7 @@
     }).length;
     var universeN = records.filter(function (r) {
       return window.SmithFilterPolicy.includeByReviewMode(
-        r._reviewQueue, state.review) &&
+        r._reviewQueue, state.queueScope) &&
         (state.includeLowPriority ||
           r._qualClass !== "TAX_DEFAULT_LOW_PRIORITY");
     }).length;
@@ -579,9 +598,13 @@
     if (!state.includeLowPriority && lpHidden)
       rcLine += "  (" + lpHidden.toLocaleString() +
         " low-priority hidden — toggle in sidebar)";
-    if (!state.review && reviewHidden)
+    if (state.queueScope === "main" && reviewHidden)
       rcLine += "  (" + reviewHidden.toLocaleString() +
         " in Review Needed)";
+    var hiddenOverall = Object.keys(skipped).length;
+    if (hiddenOverall)
+      rcLine += "  (" + hiddenOverall.toLocaleString() +
+        " hidden overall — restore in sidebar)";
     $("rowCount").textContent = rcLine;
     $("markedCount").textContent = Object.keys(marked).length;
     $("hiddenCount").textContent = Object.keys(skipped).length;
@@ -855,7 +878,10 @@
     if (state.valMax != null) parts.push("max " + money(state.valMax));
     if (state.absentee) parts.push("absentee");
     if (state.oos) parts.push("out-of-state");
-    if (state.review) parts.push("review-required");
+    if (state.newOnly && state.preset !== "new") parts.push("NEW today");
+    if (state.last30Only && state.preset !== "last30") parts.push("last 30 days");
+    if (state.queueScope === "all") parts.push("all queues");
+    else if (state.queueScope === "review") parts.push("review-required");
     if (state.multiOnly) parts.push("multi-signal");
     $("filterSummary").innerHTML = parts.length
       ? "Showing: " + parts.join(" · ")
